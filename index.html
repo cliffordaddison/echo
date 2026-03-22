@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo — Language Learning Audio Player</title>
+    <meta name="description" content="Drop any audio file and get real-time word-by-word transcription highlighting for language learning, shadowing, and sentence mining.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- ===== DROP ZONE VIEW ===== -->
+    <div id="drop-view" class="view active">
+        <div class="drop-container">
+            <div class="brand">
+                <div class="brand-icon">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <circle cx="24" cy="24" r="22" stroke="url(#grad1)" stroke-width="2.5" opacity="0.6"/>
+                        <circle cx="24" cy="24" r="14" stroke="url(#grad1)" stroke-width="2" opacity="0.4"/>
+                        <circle cx="24" cy="24" r="6" fill="url(#grad1)"/>
+                        <defs>
+                            <linearGradient id="grad1" x1="0" y1="0" x2="48" y2="48">
+                                <stop offset="0%" stop-color="#818cf8"/>
+                                <stop offset="100%" stop-color="#c084fc"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1 class="brand-name">Echo</h1>
+                <p class="brand-tagline">Language Learning Audio Player</p>
+            </div>
+
+            <div id="drop-zone" class="drop-zone">
+                <div class="drop-zone-content">
+                    <div class="drop-icon">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <p class="drop-text">Drop an audio file here</p>
+                    <p class="drop-subtext">MP3, WAV, M4A, FLAC, OGG — any language</p>
+                    <label class="browse-btn" for="file-input">
+                        or browse files
+                        <input type="file" id="file-input" accept="audio/*" hidden>
+                    </label>
+                </div>
+            </div>
+
+            <div class="supported-languages">
+                <span>🇫🇷 French</span>
+                <span>🇪🇸 Spanish</span>
+                <span>🇩🇪 German</span>
+                <span>🇮🇹 Italian</span>
+                <span>🇵🇹 Portuguese</span>
+                <span>🇯🇵 Japanese</span>
+                <span>+ 90 more</span>
+            </div>
+            <p class="model-note">Whisper AI runs in your browser. Model downloads once (~75MB) and is cached.</p>
+        </div>
+    </div>
+
+    <!-- ===== PROCESSING VIEW ===== -->
+    <div id="processing-view" class="view">
+        <div class="processing-container">
+            <div class="processing-icon">
+                <div class="pulse-ring"></div>
+                <div class="pulse-ring delay-1"></div>
+                <div class="pulse-ring delay-2"></div>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+            </div>
+            <h2 class="processing-title" id="processing-title">Transcribing your audio...</h2>
+            <p class="processing-message" id="processing-message">Please wait while Whisper works its magic</p>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <p class="progress-text" id="progress-text">0%</p>
+        </div>
+    </div>
+
+    <!-- ===== PLAYER VIEW ===== -->
+    <div id="player-view" class="view">
+        <div class="player-container">
+            <!-- Header -->
+            <div class="player-header">
+                <button class="back-btn" id="back-btn" title="Load another file">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"/>
+                        <polyline points="12 19 5 12 12 5"/>
+                    </svg>
+                </button>
+                <div class="player-title">
+                    <h2 id="player-file-name">Audio File</h2>
+                    <span class="language-badge" id="language-badge">French</span>
+                </div>
+                <div class="sentence-counter">
+                    <span id="current-sentence-num">1</span>
+                    <span class="separator">/</span>
+                    <span id="total-sentences">0</span>
+                </div>
+            </div>
+
+            <!-- Transcript Area -->
+            <div class="transcript-area" id="transcript-area">
+                <!-- Sentences will be injected here -->
+            </div>
+
+            <!-- Waveform / Progress -->
+            <div class="progress-section">
+                <span class="time-label" id="current-time">0:00</span>
+                <div class="seek-bar-container" id="seek-bar-container">
+                    <div class="seek-bar-bg"></div>
+                    <div class="seek-bar-fill" id="seek-bar-fill"></div>
+                    <div class="seek-bar-handle" id="seek-bar-handle"></div>
+                </div>
+                <span class="time-label" id="total-time">0:00</span>
+            </div>
+
+            <!-- Transport Controls -->
+            <div class="transport-controls">
+                <div class="control-group left-controls">
+                    <button class="control-btn loop-btn" id="loop-btn" title="Loop current sentence">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="17 1 21 5 17 9"/>
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                            <polyline points="7 23 3 19 7 15"/>
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="control-group center-controls">
+                    <button class="control-btn prev-btn" id="prev-btn" title="Previous sentence">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
+                        </svg>
+                    </button>
+                    <button class="control-btn play-btn" id="play-btn" title="Play / Pause">
+                        <svg class="icon-play" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                        <svg class="icon-pause" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+                            <path d="M6 4h4v16H6zM14 4h4v16h-4z"/>
+                        </svg>
+                    </button>
+                    <button class="control-btn next-btn" id="next-btn" title="Next sentence">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M6 18 14.5 12 6 6zM16 6h2v12h-2z"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="control-group right-controls">
+                    <div class="speed-control">
+                        <button class="speed-btn" id="speed-btn" title="Playback speed">1.0×</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

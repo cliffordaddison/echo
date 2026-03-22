@@ -1,0 +1,123 @@
+Build a single HTML file called "echo-player.html" — a French language 
+shadowing and sentence mining player. No backend, no server, no API keys. 
+Everything runs in the browser.
+
+TECH STACK:
+- Use @xenova/transformers v2.17.2 from jsdelivr CDN via ES module import
+- Model: "Xenova/whisper-small" (multilingual, auto-detects language)
+- No React, no build tools — pure vanilla HTML/CSS/JavaScript in one file
+
+STEP 1 — UPLOAD SCREEN:
+- Single drag-and-drop zone that accepts audio files (mp3, m4a, wav, ogg, flac)
+- When file is dropped or selected, immediately:
+  1. Set audio element src to URL.createObjectURL(file)
+  2. Begin Whisper transcription in the background
+  3. Show a progress bar and status messages ("Loading model...", 
+     "Transcribing...", percentage complete)
+- The Whisper model (~150MB) downloads once and is cached by the browser 
+  forever after
+
+STEP 2 — TRANSCRIPTION:
+Use this exact pipeline call:
+  const transcriber = await pipeline(
+    'automatic-speech-recognition',
+    'Xenova/whisper-small',
+    { progress_callback: onProgress }
+  );
+  const result = await transcriber(float32AudioArray, {
+    return_timestamps: 'word',
+    chunk_length_s: 30,
+    stride_length_s: 5,
+  });
+
+To convert the uploaded file to Float32Array at 16kHz (required by Whisper):
+  const arrayBuffer = await file.arrayBuffer();
+  const audioCtx = new AudioContext({ sampleRate: 16000 });
+  const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+  const float32 = decoded.getChannelData(0);
+
+The result.chunks array contains objects like:
+  { text: " word", timestamp: [startSec, endSec] }
+
+STEP 3 — SENTENCE SPLITTING:
+Take the flat word array from result.chunks and group them into sentences.
+A new sentence starts after any word whose .text ends with . ! ? … 
+Each sentence object should be:
+  { text: string, words: [{word, start, end}], start: number, end: number }
+where start = first word's timestamp[0], end = last word's timestamp[1]
+
+STEP 4 — THE PLAYER (shown after transcription completes):
+
+A. TRANSCRIPT DISPLAY CARD (top of screen):
+   - Shows the CURRENT sentence only
+   - Each word is a <span> with its own start/end time stored as data attributes
+   - On audio timeupdate event, loop through spans:
+     - If currentTime >= word.start AND currentTime <= word.end → add class 
+       "active" (bright highlight color, slight background)
+     - If currentTime > word.end → add class "past" (full opacity, no highlight)
+     - Otherwise → class "future" (dim/muted opacity)
+   - This is the core Apple Podcasts-style word highlighting
+
+B. CONTEXT CARDS (below transcript):
+   - Two side-by-side cards showing previous sentence text and next sentence text
+   - Clicking either card jumps to that sentence
+
+C. SEEKBAR:
+   - Full-width progress bar showing position in the entire audio
+   - Small tick marks at the start time of each sentence
+   - Clicking the seekbar seeks the audio AND detects which sentence 
+     that time belongs to, then calls showSentence(idx)
+
+D. CONTROLS (centered row):
+   - ⏮ PREV button → jump to previous sentence start time
+   - ↺5 button → skip back 5 seconds  
+   - ▶/⏸ PLAY/PAUSE (large center button)
+   - ↻5 button → skip forward 5 seconds
+   - ⏭ NEXT button → jump to next sentence start time
+
+E. SPEED CONTROLS: 0.5× 0.75× 1× 1.25× 1.5× buttons
+
+F. LOOP TOGGLE: When active, when audio reaches sentence.end, 
+   set audio.currentTime = sentence.start (loops current sentence forever)
+
+G. AUTO-ADVANCE TOGGLE: When active (default on), when audio reaches 
+   sentence.end, automatically call showSentence(currentIdx + 1) and 
+   continue playing. This makes it flow like a normal audio player but 
+   sentence-aware.
+
+H. SENTENCE LIST DRAWER (bottom, collapsible):
+   - Lists all sentences numbered
+   - Current sentence highlighted
+   - Clicking any sentence jumps to it and starts playing from there
+
+SENTENCE BOUNDARY DETECTION (critical):
+In the timeupdate handler, also check if we need to auto-advance:
+  if (audio.currentTime >= sentences[currentIdx].end - 0.1) {
+    if (looping) { audio.currentTime = sentences[currentIdx].start; }
+    else if (autoAdvance && currentIdx < sentences.length - 1) {
+      showSentence(currentIdx + 1);
+    }
+  }
+
+DESIGN:
+- Dark theme: background #080b10, surface cards #0f1319
+- Active word color: #5ef0a0 (bright green) with subtle green background
+- Past words: 75% white opacity
+- Future words: 25% white opacity
+- Font for transcript: Lora serif (from Google Fonts) at ~1.5rem
+- Font for UI: Outfit sans-serif
+- Font for timestamps/counters: JetBrains Mono
+- Subtle grid texture on background
+- Smooth transitions on word highlights (0.08s)
+- Play button: large circle filled with accent green, icon is dark
+
+IMPORTANT NOTES:
+1. The Whisper model caches in the browser after first download — show 
+   this to the user so they know it only downloads once
+2. For long audio files (30+ min), transcription in browser takes 
+   3-10 minutes — show a clear progress indicator the whole time
+3. Word timestamps from Xenova whisper are approximate (~200ms accuracy) 
+   — this is acceptable for shadowing practice
+4. Handle the case where result.chunks is empty or undefined gracefully
+5. The entire app must work by simply opening the HTML file in Chrome 
+   or Firefox — no localhost server required
