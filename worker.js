@@ -11,13 +11,14 @@ let transcriber = null;
 const downloadProgress = {};
 
 self.addEventListener('message', async (e) => {
-    const { type, audio, language } = e.data;
+    const { type, audio, language, jobId } = e.data;
 
     if (type === 'transcribe') {
         try {
             // Step 1: Load Whisper model (downloads once, cached after)
             if (!transcriber) {
                 self.postMessage({
+                    jobId,
                     type: 'status',
                     status: 'loading_model',
                     progress: 5,
@@ -49,6 +50,7 @@ self.addEventListener('message', async (e) => {
                                 let roundedProg = Math.round(progObj);
 
                                 self.postMessage({
+                                    jobId,
                                     type: 'status',
                                     status: 'loading_model',
                                     progress: roundedProg,
@@ -60,6 +62,7 @@ self.addEventListener('message', async (e) => {
                 );
 
                 self.postMessage({
+                    jobId,
                     type: 'status',
                     status: 'model_ready',
                     progress: 52,
@@ -69,17 +72,45 @@ self.addEventListener('message', async (e) => {
 
             // Step 2: Transcribe with word-level timestamps
             self.postMessage({
+                jobId,
                 type: 'status',
                 status: 'transcribing',
                 progress: 55,
                 message: 'Transcribing audio (this may take a moment)...'
             });
 
+            function formatTimeWorker(seconds) {
+                if (!seconds || isNaN(seconds)) return '0:00';
+                const m = Math.floor(seconds / 60);
+                const s = Math.floor(seconds % 60);
+                return m + ':' + (s < 10 ? '0' : '') + s;
+            }
+
+            const audioDuration = audio.length / 16000;
+
             let transcribeOptions = {
                 task: 'transcribe',
                 return_timestamps: 'word',
                 chunk_length_s: 30,
                 stride_length_s: 5,
+                chunk_callback: (chunk) => {
+                    let tEnd = chunk.timestamp ? chunk.timestamp[1] : null;
+                    if (tEnd === null && chunk.timestamp && chunk.timestamp[0] !== null) {
+                        tEnd = chunk.timestamp[0] + 2;
+                    }
+                    if (tEnd !== null) {
+                        const pct = Math.min(100, Math.round((tEnd / audioDuration) * 100));
+                        const rem = Math.max(0, audioDuration - tEnd);
+                        self.postMessage({
+                            jobId,
+                            type: 'status',
+                            status: 'transcribing',
+                            progress: 55 + Math.round(pct * 0.44),
+                            message: `Transcribing... ${formatTimeWorker(tEnd)} / ${formatTimeWorker(audioDuration)} (rem: ${formatTimeWorker(rem)})`
+                        });
+                    }
+                    self.postMessage({ jobId, type: 'partial_result', data: chunk });
+                }
             };
             if (language && language !== 'auto') {
                 transcribeOptions.language = language;
@@ -89,16 +120,17 @@ self.addEventListener('message', async (e) => {
 
             // Step 3: Done
             self.postMessage({
+                jobId,
                 type: 'status',
                 status: 'done',
                 progress: 100,
                 message: 'Transcription complete!'
             });
 
-            self.postMessage({ type: 'result', data: result });
+            self.postMessage({ jobId, type: 'result', data: result });
 
         } catch (err) {
-            self.postMessage({ type: 'error', error: err.message });
+            self.postMessage({ jobId, type: 'error', error: err.message });
         }
     }
 });

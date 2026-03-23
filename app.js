@@ -38,6 +38,8 @@
     const iconPause = playBtn.querySelector('.icon-pause');
 
     // ========== State ==========
+    let activeAudioUrl = null;
+    let isPlayerInitialized = false;
     let audio = null;
     let transcript = null;
     let sentences = [];
@@ -46,6 +48,7 @@
     let animFrameId = null;
     let worker = null;
     let isSeeking = false;
+    let currentJobId = 0;
 
     const SPEEDS = [0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
     let speedIndex = 6; // 1.0x
@@ -82,8 +85,18 @@
     });
 
     function handleFile(file) {
-        // Create object URL for direct audio playback (no server needed!)
-        const audioUrl = URL.createObjectURL(file);
+        if (worker) {
+            worker.terminate();
+            worker = null;
+        }
+        const jobId = ++currentJobId;
+
+        // Clear previous object URL from memory before creating a new one
+        if (activeAudioUrl) {
+            URL.revokeObjectURL(activeAudioUrl);
+            activeAudioUrl = null;
+        }
+        activeAudioUrl = URL.createObjectURL(file);
         playerFileName.textContent = file.name.replace(/\.[^/.]+$/, '');
 
         showView(processingView);
@@ -92,11 +105,16 @@
         progressBar.style.width = '0%';
         progressText.textContent = '0%';
 
-        transcribeAudio(file, audioUrl);
+        isPlayerInitialized = false;
+        transcript = null;
+        sentences = [];
+        currentSentenceIndex = -1;
+
+        transcribeAudio(file, activeAudioUrl, jobId);
     }
 
     // ========== Client-Side Transcription ==========
-    async function transcribeAudio(file, audioUrl) {
+    async function transcribeAudio(file, audioUrl, jobId) {
         try {
             // Decode audio to 16kHz mono Float32Array (what Whisper expects)
             processingTitle.textContent = 'Decoding audio...';
@@ -106,9 +124,14 @@
 
             const arrayBuffer = await file.arrayBuffer();
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            const audioData = audioBuffer.getChannelData(0); // mono, 16kHz
-            audioCtx.close();
+            let audioData;
+            try {
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                if (jobId !== currentJobId) return;
+                audioData = audioBuffer.getChannelData(0); // mono, 16kHz
+            } finally {
+                if (audioCtx.state !== 'closed') audioCtx.close();
+            }
 
             // Create Web Worker for transcription
             if (worker) worker.terminate();
@@ -116,6 +139,7 @@
 
             worker.onmessage = (e) => {
                 const msg = e.data;
+                if (msg.jobId !== jobId) return;
 
                 switch (msg.type) {
                     case 'status':
@@ -127,9 +151,30 @@
                         progressText.textContent = roundedP + '%';
                         break;
 
+                    case 'partial_result':
+                        if (!transcript) transcript = { chunks: [] };
+                        transcript.chunks.push(msg.data);
+                        const partialProcessed = processTranscript(transcript);
+                        sentences = partialProcessed.sentences;
+                        totalSentencesEl.textContent = sentences.length;
+
+                        if (!isPlayerInitialized && sentences.length > 0) {
+                            initPlayerState(audioUrl);
+                        } else if (isPlayerInitialized) {
+                            buildTranscript();
+                        }
+                        break;
+
                     case 'result':
-                        const processed = processTranscript(msg.data);
-                        initPlayer(audioUrl, processed);
+                        transcript = msg.data;
+                        const finalProcessed = processTranscript(transcript);
+                        sentences = finalProcessed.sentences;
+                        totalSentencesEl.textContent = sentences.length;
+                        if (!isPlayerInitialized) {
+                            initPlayerState(audioUrl);
+                        } else {
+                            buildTranscript();
+                        }
                         break;
 
                     case 'error':
@@ -139,17 +184,19 @@
             };
 
             worker.onerror = (err) => {
+                if (jobId !== currentJobId) return;
                 showError('Worker error: ' + (err.message || 'Unknown error'));
             };
 
             // Transfer audio data to worker (zero-copy)
             const selectedLanguage = langSelect ? langSelect.value : 'auto';
             worker.postMessage(
-                { type: 'transcribe', audio: audioData, language: selectedLanguage },
+                { type: 'transcribe', audio: audioData, language: selectedLanguage, jobId: jobId },
                 [audioData.buffer]
             );
 
         } catch (err) {
+            if (jobId !== currentJobId) return;
             showError('Audio processing error: ' + err.message);
         }
     }
@@ -332,21 +379,13 @@
         return sentenceList;
     }
 
-    // ========== Initialize Player ==========
-    function initPlayer(audioUrl, transcriptData) {
-        transcript = transcriptData;
-        sentences = transcript.sentences || [];
-
-        // Language badge - detect from common patterns
+    // ========== Initialize Player State ==========
+    function initPlayerState(audioUrl) {
+        isPlayerInitialized = true;
         languageBadge.textContent = 'AUDIO';
-
-        // Total sentences
-        totalSentencesEl.textContent = sentences.length;
-
-        // Build transcript DOM
+        
         buildTranscript();
 
-        // Setup audio
         if (audio) {
             audio.pause();
             audio.src = '';
@@ -371,22 +410,23 @@
             console.error('Audio error:', e);
         });
 
-        // Show player view
         showView(playerView);
 
-        // Reset state
         currentSentenceIndex = -1;
         speedIndex = 6;
         speedBtn.textContent = '1.0×';
         isAutoAdvance = true;
         if(autoAdvanceCb) autoAdvanceCb.checked = true;
 
-        // Start sync loop
         startSyncLoop();
     }
 
     // ========== Build Transcript DOM ==========
     function buildTranscript() {
+        const oldScroll = transcriptArea.scrollTop;
+        const oldScrollMax = Math.max(0, transcriptArea.scrollHeight - transcriptArea.clientHeight);
+        const isAtBottom = oldScrollMax > 0 && oldScroll >= oldScrollMax - 10;
+
         transcriptArea.innerHTML = '';
 
         sentences.forEach((sentence, sIdx) => {
@@ -431,6 +471,39 @@
 
             transcriptArea.appendChild(sentenceEl);
         });
+
+        reapplyHighlightState();
+
+        if (isAtBottom && transcriptArea.scrollHeight > transcriptArea.clientHeight) {
+            transcriptArea.scrollTop = transcriptArea.scrollHeight - transcriptArea.clientHeight;
+        } else {
+            transcriptArea.scrollTop = oldScroll;
+        }
+    }
+
+    function reapplyHighlightState() {
+        if (currentSentenceIndex >= 0) {
+            const sentenceEls = transcriptArea.querySelectorAll('.sentence');
+            sentenceEls.forEach((el, idx) => {
+                if (idx === currentSentenceIndex) el.classList.add('active');
+                else if (idx < currentSentenceIndex) el.classList.add('past');
+            });
+        }
+        if (audio) {
+            const currentTime = audio.currentTime;
+            const wordEls = transcriptArea.querySelectorAll('.word');
+            wordEls.forEach(wordEl => {
+                const sIdx = parseInt(wordEl.dataset.sentenceIndex);
+                const wIdx = parseInt(wordEl.dataset.wordIndex);
+                const word = sentences[sIdx]?.words[wIdx];
+                if (!word) return;
+                if (currentTime >= word.start && currentTime <= word.end + 0.05) {
+                    wordEl.classList.add('active');
+                } else if (currentTime > word.end) {
+                    wordEl.classList.add('spoken');
+                }
+            });
+        }
     }
 
     // ========== Sync Loop — Real-time Word Highlighting ==========
@@ -624,10 +697,21 @@
         if (audio) { audio.pause(); audio.src = ''; }
         if (animFrameId) cancelAnimationFrame(animFrameId);
         if (worker) { worker.terminate(); worker = null; }
+        if (activeAudioUrl) {
+            URL.revokeObjectURL(activeAudioUrl);
+            activeAudioUrl = null;
+        }
         transcript = null;
         sentences = [];
         currentSentenceIndex = -1;
+        isPlayerInitialized = false;
         showView(dropView);
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (activeAudioUrl) {
+            URL.revokeObjectURL(activeAudioUrl);
+        }
     });
 
     // ========== Keyboard Shortcuts ==========
