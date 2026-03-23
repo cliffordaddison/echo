@@ -28,7 +28,7 @@
 | `Space` | Play / Pause |
 | `←` `→` | Previous / Next sentence |
 | `↑` `↓` | Speed up / Slow down |
-| `L` | Toggle sentence loop |
+| `A` | Toggle auto-advance |
 
 ## Tech Stack
 

@@ -46,7 +46,7 @@
                     <p class="drop-subtext">MP3, WAV, M4A, FLAC, OGG — any language</p>
                     <label class="browse-btn" for="file-input">
                         or browse files
-                        <input type="file" id="file-input" accept="audio/*" hidden>
+                        <input type="file" id="file-input" accept="audio/*,video/*,.mp3,.wav,.m4a,.m4b,.flac,.ogg,.aac,.mp4,.weba,.webm,.3gp,.amr" hidden>
                     </label>
                 </div>
             </div>
@@ -60,6 +60,24 @@
                 <span>🇯🇵 Japanese</span>
                 <span>+ 90 more</span>
             </div>
+            
+            <div class="language-dropdown-container">
+                <label for="lang-select" class="language-label">Audio Language:</label>
+                <select id="lang-select" class="language-select">
+                    <option value="auto">Auto-Detect</option>
+                    <option value="french">French</option>
+                    <option value="spanish">Spanish</option>
+                    <option value="german">German</option>
+                    <option value="italian">Italian</option>
+                    <option value="portuguese">Portuguese</option>
+                    <option value="japanese">Japanese</option>
+                    <option value="chinese">Chinese</option>
+                    <option value="english">English</option>
+                    <option value="russian">Russian</option>
+                    <option value="korean">Korean</option>
+                </select>
+            </div>
+
             <p class="model-note">Whisper AI runs in your browser. Model downloads once (~75MB) and is cached.</p>
         </div>
     </div>
@@ -128,14 +146,10 @@
             <!-- Transport Controls -->
             <div class="transport-controls">
                 <div class="control-group left-controls">
-                    <button class="control-btn loop-btn" id="loop-btn" title="Loop current sentence">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="17 1 21 5 17 9"/>
-                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                            <polyline points="7 23 3 19 7 15"/>
-                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-                        </svg>
-                    </button>
+                    <label class="auto-advance-label" title="When off, loops the current sentence">
+                        <input type="checkbox" id="auto-advance-cb" checked>
+                        <span class="auto-advance-text">Auto-Advance</span>
+                    </label>
                 </div>
 
                 <div class="control-group center-controls">

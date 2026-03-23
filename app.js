@@ -21,7 +21,8 @@
     const playBtn = document.getElementById('play-btn');
     const prevBtn = document.getElementById('prev-btn');
     const nextBtn = document.getElementById('next-btn');
-    const loopBtn = document.getElementById('loop-btn');
+    const autoAdvanceCb = document.getElementById('auto-advance-cb');
+    const langSelect = document.getElementById('lang-select');
     const speedBtn = document.getElementById('speed-btn');
     const backBtn = document.getElementById('back-btn');
     const seekBarContainer = document.getElementById('seek-bar-container');
@@ -41,7 +42,7 @@
     let transcript = null;
     let sentences = [];
     let currentSentenceIndex = -1;
-    let isLooping = false;
+    let isAutoAdvance = true;
     let animFrameId = null;
     let worker = null;
     let isSeeking = false;
@@ -75,16 +76,12 @@
     });
 
     dropZone.addEventListener('click', e => {
-        if (e.target !== fileInput) fileInput.click();
+        if (e.target !== fileInput && !e.target.closest('.browse-btn') && !e.target.closest('label')) {
+            fileInput.click();
+        }
     });
 
-    // ========== File Handling ==========
     function handleFile(file) {
-        if (!file.type.startsWith('audio/') && !file.name.match(/\.(mp3|wav|m4a|flac|ogg|aac|wma|opus)$/i)) {
-            alert('Please drop an audio file (MP3, WAV, M4A, FLAC, OGG, etc.)');
-            return;
-        }
-
         // Create object URL for direct audio playback (no server needed!)
         const audioUrl = URL.createObjectURL(file);
         playerFileName.textContent = file.name.replace(/\.[^/.]+$/, '');
@@ -124,8 +121,10 @@
                     case 'status':
                         processingTitle.textContent = getStatusTitle(msg.status);
                         processingMessage.textContent = msg.message || '';
-                        progressBar.style.width = msg.progress + '%';
-                        progressText.textContent = msg.progress + '%';
+                        let p = Math.max(0, Math.min(100, msg.progress || 0));
+                        let roundedP = Math.round(p);
+                        progressBar.style.width = roundedP + '%';
+                        progressText.textContent = roundedP + '%';
                         break;
 
                     case 'result':
@@ -144,8 +143,9 @@
             };
 
             // Transfer audio data to worker (zero-copy)
+            const selectedLanguage = langSelect ? langSelect.value : 'auto';
             worker.postMessage(
-                { type: 'transcribe', audio: audioData },
+                { type: 'transcribe', audio: audioData, language: selectedLanguage },
                 [audioData.buffer]
             );
 
@@ -359,7 +359,7 @@
         });
 
         audio.addEventListener('ended', () => {
-            if (isLooping && currentSentenceIndex >= 0) {
+            if (!isAutoAdvance && currentSentenceIndex >= 0) {
                 audio.currentTime = sentences[currentSentenceIndex].start;
                 audio.play();
             } else {
@@ -378,8 +378,8 @@
         currentSentenceIndex = -1;
         speedIndex = 6;
         speedBtn.textContent = '1.0×';
-        isLooping = false;
-        loopBtn.classList.remove('active');
+        isAutoAdvance = true;
+        if(autoAdvanceCb) autoAdvanceCb.checked = true;
 
         // Start sync loop
         startSyncLoop();
@@ -598,14 +598,15 @@
         if (audio.paused) { audio.play(); setPlaying(true); }
     });
 
-    loopBtn.addEventListener('click', () => {
-        isLooping = !isLooping;
-        loopBtn.classList.toggle('active', isLooping);
-    });
+    if (autoAdvanceCb) {
+        autoAdvanceCb.addEventListener('change', (e) => {
+            isAutoAdvance = e.target.checked;
+        });
+    }
 
     // Sentence loop check
     setInterval(() => {
-        if (!isLooping || !audio || audio.paused || currentSentenceIndex < 0) return;
+        if (isAutoAdvance || !audio || audio.paused || currentSentenceIndex < 0) return;
         const s = sentences[currentSentenceIndex];
         if (audio.currentTime > s.end + 0.1) {
             audio.currentTime = s.start;
@@ -645,9 +646,9 @@
                 e.preventDefault();
                 nextBtn.click();
                 break;
-            case 'KeyL':
+            case 'KeyA':
                 e.preventDefault();
-                loopBtn.click();
+                if(autoAdvanceCb) autoAdvanceCb.click();
                 break;
             case 'ArrowUp':
                 e.preventDefault();

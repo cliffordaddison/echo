@@ -11,7 +11,7 @@ let transcriber = null;
 const downloadProgress = {};
 
 self.addEventListener('message', async (e) => {
-    const { type, audio } = e.data;
+    const { type, audio, language } = e.data;
 
     if (type === 'transcribe') {
         try {
@@ -45,10 +45,13 @@ self.addEventListener('message', async (e) => {
                                     ? Math.round((totalLoaded / totalSize) * 100)
                                     : 0;
 
+                                let progObj = Math.max(5, Math.min(50, pct * 0.45 + 5));
+                                let roundedProg = Math.round(progObj);
+
                                 self.postMessage({
                                     type: 'status',
                                     status: 'loading_model',
-                                    progress: Math.max(5, Math.min(50, pct * 0.45 + 5)),
+                                    progress: roundedProg,
                                     message: `Downloading model... ${pct}%`
                                 });
                             }
@@ -72,11 +75,17 @@ self.addEventListener('message', async (e) => {
                 message: 'Transcribing audio (this may take a moment)...'
             });
 
-            const result = await transcriber(audio, {
+            let transcribeOptions = {
+                task: 'transcribe',
                 return_timestamps: 'word',
                 chunk_length_s: 30,
                 stride_length_s: 5,
-            });
+            };
+            if (language && language !== 'auto') {
+                transcribeOptions.language = language;
+            }
+
+            const result = await transcriber(audio, transcribeOptions);
 
             // Step 3: Done
             self.postMessage({
